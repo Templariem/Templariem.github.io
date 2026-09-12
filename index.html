@@ -252,9 +252,55 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; }
   .contact a, .contact p { color: var(--ink); }
   a { color: inherit; }
 }
+
+/* A quiet network behind the reading surface. */
+#graph-space {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+main.wrap {
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(255,255,255,.64), rgba(255,255,255,.93) 8%, rgba(255,255,255,.93) 92%, rgba(255,255,255,.64));
+}
+.contact, footer { position: relative; z-index: 1; }
+footer { background: rgba(255,255,255,.93); }
+.motion-toggle {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 6;
+  min-height: 44px;
+  padding: .5rem .85rem;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: #fff;
+  color: var(--muted);
+  font: 500 .875rem/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(23,47,59,.06);
+}
+.motion-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.motion-toggle:focus-visible { outline: 3px solid #cc7500; outline-offset: 4px; }
+footer { padding-bottom: 5rem; }
+@media (max-width: 620px) {
+  main.wrap { background: rgba(255,255,255,.84); }
+  #graph-space { opacity: .8; }
+}
+@media print {
+  #graph-space, .motion-toggle { display: none !important; }
+  main.wrap, footer { background: white; }
+  footer { padding-bottom: 0; }
+}
 </style>
 </head>
 <body>
+<canvas id="graph-space" aria-hidden="true"></canvas>
+<button id="motion-toggle" class="motion-toggle" type="button" aria-controls="graph-space" hidden>Pause animation</button>
 <a class="skip" href="#main">Skip to content</a>
 <header><div class="wrap"><div class="header-inner"><a class="wordmark" href="#main" aria-label="Giovanni Cocca-Guardia, home">Giovanni Cocca-Guardia</a><nav aria-label="Main navigation"><a href="#publications">Publications</a><a href="#research">Research</a><a href="#education">Education</a><a href="#teaching">Teaching</a><a href="#contact">Contact</a></nav></div></div></header>
 <main id="main" class="wrap">
@@ -296,4 +342,123 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; }
 </main>
 <div id="contact" class="contact"><div class="wrap"><div><h2>Contact</h2><a href="mailto:giovanni.cocca@pucv.cl">giovanni.cocca@pucv.cl</a></div><p>Pontificia Universidad Católica de Valparaíso<br>Valparaíso, Chile</p></div></div>
 <footer><div class="wrap"><span>© 2026 Giovanni Cocca-Guardia</span><a href="#main">Back to top ↑</a></div></footer>
+
+<script>
+(() => {
+  'use strict';
+  const canvas = document.getElementById('graph-space');
+  const toggle = document.getElementById('motion-toggle');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const printing = window.matchMedia('print');
+  let width = 0, height = 0, frame = 0, lastTime = 0, elapsed = 0;
+  let paused = false;
+  // Fixed seed keeps the layout stable across reloads and screen sizes.
+  let seed = 7319;
+  const random = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  const nodes = Array.from({length: 64}, () => {
+    const azimuth = random() * Math.PI * 2;
+    const vertical = random() * 2 - 1;
+    const radius = .45 + random() * .55;
+    const ring = Math.sqrt(1 - vertical * vertical);
+    return {
+      x: Math.cos(azimuth) * ring * radius,
+      y: vertical * radius,
+      z: Math.sin(azimuth) * ring * radius,
+      size: .9 + random() * 1.3
+    };
+  });
+  // Each node connects to its three closest neighbours in three dimensions.
+  const edgeKeys = new Set();
+  const edges = [];
+  nodes.forEach((node, i) => {
+    const nearest = nodes.map((other, j) => ({
+      j, distance: (node.x-other.x)**2 + (node.y-other.y)**2 + (node.z-other.z)**2
+    })).filter(item => item.j !== i).sort((a,b) => a.distance-b.distance).slice(0,3);
+    nearest.forEach(({j}) => {
+      const key = Math.min(i,j) + ':' + Math.max(i,j);
+      if (!edgeKeys.has(key)) { edgeKeys.add(key); edges.push([i,j]); }
+    });
+  });
+  function draw() {
+    ctx.clearRect(0, 0, width, height);
+    const turn = elapsed * .035 + .35;
+    const tilt = Math.sin(elapsed * .022) * .22 + .18;
+    const cy = Math.cos(turn), sy = Math.sin(turn);
+    const cx = Math.cos(tilt), sx = Math.sin(tilt);
+    const points = nodes.map(node => {
+      const x = node.x * cy + node.z * sy;
+      const z = node.z * cy - node.x * sy;
+      const y = node.y * cx - z * sx;
+      const depth = node.y * sx + z * cx;
+      const perspective = 2.8 / (2.8 + depth);
+      return {
+        x: width * .5 + x * width * .61 * perspective,
+        y: height * .52 + y * height * .64 * perspective,
+        depth, perspective, size: node.size
+      };
+    });
+    ctx.lineWidth = .85;
+    edges.forEach(([i,j]) => {
+      const a=points[i], b=points[j];
+      const opacity = .15 + (2-a.depth-b.depth) * .035;
+      ctx.strokeStyle = `rgba(0,108,120,${opacity})`;
+      ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+    });
+    points.sort((a,b) => b.depth-a.depth).forEach(point => {
+      const radius = point.size * point.perspective;
+      ctx.fillStyle = 'rgba(0,108,120,.045)';
+      ctx.beginPath(); ctx.arc(point.x,point.y,radius*3.5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = `rgba(0,108,120,${.36 + (1-point.depth)*.13})`;
+      ctx.beginPath(); ctx.arc(point.x,point.y,radius,0,Math.PI*2); ctx.fill();
+    });
+  }
+  function canAnimate() {
+    return !paused && !reducedMotion.matches && !document.hidden && !printing.matches;
+  }
+  function tick(now) {
+    frame = 0;
+    if (!canAnimate()) return;
+    if (!lastTime) lastTime = now;
+    const delta = now-lastTime;
+    // Cap drawing at 30 fps and avoid jumps when a tab becomes visible again.
+    if (delta >= 1000/30) {
+      elapsed += Math.min(delta, 100) / 1000;
+      lastTime = now;
+      draw();
+    }
+    frame = requestAnimationFrame(tick);
+  }
+  function syncMotion() {
+    cancelAnimationFrame(frame);
+    frame = 0; lastTime = 0;
+    toggle.hidden = reducedMotion.matches;
+    toggle.textContent = paused ? 'Resume animation' : 'Pause animation';
+    draw();
+    if (canAnimate()) frame = requestAnimationFrame(tick);
+  }
+  function resize() {
+    width = document.documentElement.clientWidth;
+    height = window.innerHeight;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    draw();
+  }
+  toggle.addEventListener('click', () => { paused = !paused; syncMotion(); });
+  window.addEventListener('resize', resize, {passive:true});
+  document.addEventListener('visibilitychange', syncMotion);
+  reducedMotion.addEventListener('change', syncMotion);
+  printing.addEventListener('change', syncMotion);
+  window.addEventListener('pagehide', () => cancelAnimationFrame(frame));
+  window.addEventListener('pageshow', syncMotion);
+  resize();
+  syncMotion();
+})();
+</script>
 </body></html>
