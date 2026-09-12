@@ -265,7 +265,7 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; }
 main.wrap {
   position: relative;
   z-index: 1;
-  background: linear-gradient(90deg, rgba(255,255,255,.64), rgba(255,255,255,.93) 8%, rgba(255,255,255,.93) 92%, rgba(255,255,255,.64));
+  background: linear-gradient(90deg, rgba(255,255,255,.28), rgba(255,255,255,.68) 8%, rgba(255,255,255,.68) 92%, rgba(255,255,255,.28));
 }
 .contact, footer { position: relative; z-index: 1; }
 footer { background: rgba(255,255,255,.93); }
@@ -288,7 +288,7 @@ footer { background: rgba(255,255,255,.93); }
 .motion-toggle:focus-visible { outline: 3px solid #cc7500; outline-offset: 4px; }
 footer { padding-bottom: 5rem; }
 @media (max-width: 620px) {
-  main.wrap { background: rgba(255,255,255,.84); }
+  main.wrap { background: rgba(255,255,255,.70); }
   #graph-space { opacity: .8; }
 }
 @media print {
@@ -353,7 +353,7 @@ footer { padding-bottom: 5rem; }
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const printing = window.matchMedia('print');
   let width = 0, height = 0, frame = 0, lastTime = 0, elapsed = 0;
-  let paused = false;
+  let paused = reducedMotion.matches;
   // Fixed seed keeps the layout stable across reloads and screen sizes.
   let seed = 7319;
   const random = () => {
@@ -405,7 +405,7 @@ footer { padding-bottom: 5rem; }
     ctx.lineWidth = .85;
     edges.forEach(([i,j]) => {
       const a=points[i], b=points[j];
-      const opacity = .15 + (2-a.depth-b.depth) * .035;
+      const opacity = .22 + (2-a.depth-b.depth) * .045;
       ctx.strokeStyle = `rgba(0,108,120,${opacity})`;
       ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
     });
@@ -418,7 +418,7 @@ footer { padding-bottom: 5rem; }
     });
   }
   function canAnimate() {
-    return !paused && !reducedMotion.matches && !document.hidden && !printing.matches;
+    return !paused && !document.hidden && !printing.matches;
   }
   function tick(now) {
     frame = 0;
@@ -436,8 +436,8 @@ footer { padding-bottom: 5rem; }
   function syncMotion() {
     cancelAnimationFrame(frame);
     frame = 0; lastTime = 0;
-    toggle.hidden = reducedMotion.matches;
-    toggle.textContent = paused ? 'Resume animation' : 'Pause animation';
+    toggle.hidden = false;
+    toggle.textContent = paused ? 'Play animation' : 'Pause animation';
     draw();
     if (canAnimate()) frame = requestAnimationFrame(tick);
   }
@@ -453,7 +453,10 @@ footer { padding-bottom: 5rem; }
   toggle.addEventListener('click', () => { paused = !paused; syncMotion(); });
   window.addEventListener('resize', resize, {passive:true});
   document.addEventListener('visibilitychange', syncMotion);
-  reducedMotion.addEventListener('change', syncMotion);
+  reducedMotion.addEventListener('change', () => {
+    paused = reducedMotion.matches;
+    syncMotion();
+  });
   printing.addEventListener('change', syncMotion);
   window.addEventListener('pagehide', () => cancelAnimationFrame(frame));
   window.addEventListener('pageshow', syncMotion);
